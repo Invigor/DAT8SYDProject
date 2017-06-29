@@ -44,3 +44,7 @@ The location information combined with a persistent identifier for the device (a
 ## Data Set
 
 The data set comprised shopper sign-up information and movement data collected from the shopping centre WiFi in a Sydney home maker centre. The WiFi network includes 10 individual access points deployed as zones which each cover a number of retailers or centre areas. WiFi coverage is prioritised for the common areas i.e. the central walkway, but connection and tracking will continue into most tenancies. The spacing between access points precludes trilateration of the shopper's exact location so the granularity of location is limited to one of 10 zones within the centre.
+
+```SQL
+create table scmp_visitor_dwell_ms as (select unnest(subscriber_id),resolution_ts::date,zone,dwell from api_report_history_insights(null::find_static_devices_dwell,'2017-01-01','2017-06-29','2000-01-01','2000-01-01','find static devices dwell','scmp','All','All','All','All','All','All','All','All','where 1=1','All','where 1=1'));
+```
