@@ -60,7 +60,40 @@ from
 );
 
 -- Convert into a cross-tab table based on zone name
-
-
-
+core=# create table scmp_visitor_dwell_crosstab_ms as
+(
+SELECT
+    *
+FROM
+    crosstab(
+        'select
+            shopper,
+            zone,
+date,
+            sum(dwell::interval) as dwell
+        from
+            scmp_visitor_dwell_ms
+        where
+            zone in (''Gallery King Furniture'',''Ground BBQ Ranch'',''Ground Dish Kiosk'',''Ground Freedom'',''Level 1 Dare Gallery'',''Level 1 JB HiFi'',''Level 1 Nick Scali'',''Level 2 Harvey Norman'',''Lower Ground Baby Bunting'',''Lower Ground Escalators'')
+        group by
+            shopper,
+            zone,
+            date
+        order by
+            1,2')
+AS
+    scmp_visitor_dwell_ms(
+        row_name integer,
+        date date,
+        zone_1 interval,
+        zone_2 interval,
+        zone_3 interval,
+        zone_4 interval,
+        zone_5 interval,
+        zone_6 interval,
+        zone_7 interval,
+        zone_8 interval,
+        zone_9 interval,
+        zone_10 interval)
+);
 ```
