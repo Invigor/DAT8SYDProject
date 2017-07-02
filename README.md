@@ -41,9 +41,17 @@ The location information combined with a persistent identifier for the device (a
 - Shopper movement within the centre
 - Shopper frequency and recency of visit 
 
+## Segmentation Hypotheses
+
+The focus of this project is to segment shoppers based on movement within the centre which is hypothesized to indicate the type of product the shopper is seeking to purchase.
+
+It is also believe that other characteristics of the shopper and their visit may be useful contributors to the segmentation model including demographics (gender and age) as well as whether the shopper is visiting during the week, on Thursday night or on  the weekend.
+
+Two other key segments will be retailer and shopping centre staff as well as static devices including mobile phones on display in consumer electronics retailers and PoS terminals within the outlets. To help segment these two groups, the number of days each device was detected within the period will be included in the analysis. 
+
 ## Data Set
 
-The data set comprised shopper sign-up information and movement data collected from the shopping centre WiFi in a Sydney home maker centre. The WiFi network includes 10 individual access points deployed as zones which each cover a number of retailers or centre areas. WiFi coverage is prioritised for the common areas i.e. the central walkway, but connection and tracking will continue into most tenancies. The spacing between access points precludes trilateration of the shopper's exact location so the granularity of location is limited to one of 10 zones within the centre.
+The data set comprised shopper sign-up information and movement data collected from the shopping centre WiFi in a Sydney home maker centre between 1 January 2017 and 30 June 2017. The WiFi network includes 10 individual access points deployed as zones which each cover a number of retailers or centre areas. WiFi coverage is prioritised for the common areas i.e. the central walkway, but connection and tracking will continue into most tenancies. The spacing between access points precludes trilateration of the shopper's exact location so the granularity of location is limited to one of 10 zones within the centre.
 
 ### Data Extraction Queries
 ```SQL
@@ -56,44 +64,71 @@ select
   zone,
   dwell 
 from 
-  api_report_history_insights(null::find_static_devices_dwell,'2017-01-01','2017-06-29','2000-01-01','2000-01-01','find static devices dwell','scmp','All','All','All','All','All','All','All','All','where 1=1','All','where 1=1')
+  api_report_history_insights(null::find_static_devices_dwell,'2017-01-01','2017-06-30','2000-01-01','2000-01-01','find static devices dwell','scmp','All','All','All','All','All','All','All','All','where 1=1','All','where 1=1')
 );
 
--- Convert into a cross-tab table based on zone name
-core=# create table scmp_visitor_dwell_crosstab_ms as
+-- Convert into a cross-tab table based on zone name with combined date and shopper ID
+create table scmp_visitor_dwell_crosstab_ms as 
 (
-SELECT
+SELECT 
     *
-FROM
+FROM 
     crosstab(
-        'select
-            shopper,
-            zone,
-date,
-            sum(dwell::interval) as dwell
-        from
+        'select 
+            date::text || ''#'' || shopper::text as shopper_date,
+            zone, 
+            sum(extract(epoch from dwell::interval))/60 as dwell
+        from 
             scmp_visitor_dwell_ms
-        where
+        where 
             zone in (''Gallery King Furniture'',''Ground BBQ Ranch'',''Ground Dish Kiosk'',''Ground Freedom'',''Level 1 Dare Gallery'',''Level 1 JB HiFi'',''Level 1 Nick Scali'',''Level 2 Harvey Norman'',''Lower Ground Baby Bunting'',''Lower Ground Escalators'')
-        group by
+        group by 
             shopper,
-            zone,
-            date
-        order by
-            1,2')
-AS
+            date,
+            zone 
+        order by 
+            1,2,3',
+            $$select unnest('{Gallery King Furniture,Ground BBQ Ranch,Ground Dish Kiosk,Ground Freedom,Level 1 Dare Gallery,Level 1 JB HiFi,Level 1 Nick Scali,Level 2 Harvey Norman,Lower Ground Baby Bunting,Lower Ground Escalators}'::text[])$$
+            )
+AS 
     scmp_visitor_dwell_ms(
-        row_name integer,
-        date date,
-        zone_1 interval,
-        zone_2 interval,
-        zone_3 interval,
-        zone_4 interval,
-        zone_5 interval,
-        zone_6 interval,
-        zone_7 interval,
-        zone_8 interval,
-        zone_9 interval,
-        zone_10 interval)
+        shopper_date                text,
+        "Gallery King Furniture"    integer, 
+        "Ground BBQ Ranch"          integer, 
+        "Ground Dish Kiosk"         integer, 
+        "Ground Freedom"            integer, 
+        "Level 1 Dare Gallery"      integer, 
+        "Level 1 JB HiFi"           integer, 
+        "Level 1 Nick Scali"        integer, 
+        "Level 2 Harvey Norman"     integer, 
+        "Lower Ground Baby Bunting" integer, 
+        "Lower Ground Escalators"   integer)
 );
-```
+
+-- Create table with each shopper's arrival time
+create table scmp_visitor_arrival_ms as
+(
+select
+    subscriber_id as shopper,
+    date_trunc('day',resolution_ts) as date,
+    min(resolution_ts) as arrival
+from
+    api_report_history_insights(null::VO_DH,'2017-01-01','2017-06-30','2000-01-01','2000-01-01','VO DH','scmp','All','All','All','All','All','All','All','All','where 1=1','All','where 1=1')
+group by
+    shopper,
+    date
+);
+
+-- Add extra columns from shopper ID, date, number of visits and day of week type
+alter table scmp_visitor_dwell_crosstab_ms add column shopper integer;
+alter table scmp_visitor_dwell_crosstab_ms add column date date;
+alter table scmp_visitor_dwell_crosstab_ms add column visits integer;
+alter table scmp_visitor_dwell_crosstab_ms add column day_of_week_type integer;
+alter table scmp_visitor_dwell_crosstab_ms add column arrival integer;
+
+-- Update table to set new columns
+update scmp_visitor_dwell_crosstab_ms set shopper = split_part(shopper_date,'#',2)::integer;
+update scmp_visitor_dwell_crosstab_ms set date = split_part(shopper_date,'#',1)::date;
+update scmp_visitor_dwell_crosstab_ms set arrival = extract(epoch from a.arrival)/3600 from (select shopper,date,arrival from scmp_visitor_arrival_ms) a where scmp_visitor_dwell_crosstab_ms.shopper = a.shopper and scmp_visitor_dwell_crosstab_ms.date = a.date;
+update scmp_visitor_dwell_crosstab_ms set visits = a.visits from (select shopper,count(*) as visits from scmp_visitor_arrival_ms group by shopper) a where scmp_visitor_dwell_crosstab_ms.shopper = a.shopper;
+update scmp_visitor_dwell_crosstab_ms set day_of_week_type = extract(dow from date);
